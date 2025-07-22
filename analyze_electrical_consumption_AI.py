@@ -1,11 +1,15 @@
 import streamlit as st
 import pandas as pd
+import os
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, precision_score, recall_score, confusion_matrix, classification_report
+from sklearn.metrics import (accuracy_score, precision_score, 
+                            recall_score, confusion_matrix, 
+                            classification_report)
 import matplotlib.pyplot as plt
 import seaborn as sns
 import google.generativeai as generai
+from pathlib import Path
 
 # Configuração inicial
 st.set_page_config(page_title="Análise de Consumo de Energia", layout="wide")
@@ -14,15 +18,45 @@ st.title("🔍 Análise de Consumo de Energia com Detecção de Fraude")
 # Configuração da API do Google Generative AI
 generai.configure(api_key="AIzaSyBHouRPqa8LLjU96nEPk6UJBgswH66OJjY")  # Substitua pela sua chave API
 
+# Função para encontrar arquivo no Desktop
+def find_csv_file():
+    # Caminhos comuns para o Desktop em diferentes sistemas operacionais
+    desktop_paths = [
+        Path.home() / "Desktop",
+        Path.home() / "Área de Trabalho",  # Para sistemas em português
+        Path.home() / "Escritorio",        # Para sistemas em espanhol
+    ]
+    
+    for desktop in desktop_paths:
+        if desktop.exists():
+            for file in desktop.glob("dados_consumo*.csv"):
+                return str(file)
+    return None
+
 # Função para carregar dados
-@st.cache_data
-def load_data():
-    try:
-        df = pd.read_csv("dados_consumo.csv")
-        return df
-    except FileNotFoundError:
-        st.error("Arquivo 'dados_consumo.csv' não encontrado.")
-        return None
+def load_data(uploaded_file=None):
+    if uploaded_file is not None:
+        try:
+            df = pd.read_csv(uploaded_file)
+            st.session_state['df'] = df
+            return df
+        except Exception as e:
+            st.error(f"Erro ao ler arquivo: {str(e)}")
+            return None
+    
+    # Tenta encontrar automaticamente no Desktop
+    auto_file = find_csv_file()
+    if auto_file:
+        try:
+            df = pd.read_csv(auto_file)
+            st.session_state['df'] = df
+            st.success(f"Arquivo encontrado automaticamente: {auto_file}")
+            return df
+        except Exception as e:
+            st.error(f"Erro ao ler arquivo automático: {str(e)}")
+    
+    st.warning("Nenhum arquivo encontrado. Por favor, faça upload do arquivo.")
+    return None
 
 # Função para análise com IA generativa
 def analyze_with_ai(data_summary, metrics):
@@ -53,10 +87,30 @@ def analyze_with_ai(data_summary, metrics):
 
 # Função principal
 def main():
-    df = load_data()
+    st.sidebar.header("Configurações de Arquivo")
+    
+    # Opção 1: Upload manual
+    uploaded_file = st.sidebar.file_uploader(
+        "Carregar arquivo CSV", 
+        type=["csv"],
+        help="Selecione o arquivo dados_consumo.csv"
+    )
+    
+    # Opção 2: Seleção automática do Desktop
+    if st.sidebar.button("Buscar automaticamente no Desktop"):
+        auto_file = find_csv_file()
+        if auto_file:
+            st.sidebar.success(f"Arquivo encontrado: {auto_file}")
+        else:
+            st.sidebar.warning("Nenhum arquivo encontrado no Desktop")
+    
+    # Carrega os dados (do upload ou da sessão)
+    df = st.session_state.get('df', None)
+    if uploaded_file or not df:
+        df = load_data(uploaded_file)
     
     if df is not None:
-        st.sidebar.header("Configurações")
+        st.sidebar.header("Visualização")
         show_raw_data = st.sidebar.checkbox("Mostrar dados brutos")
         
         if show_raw_data:
