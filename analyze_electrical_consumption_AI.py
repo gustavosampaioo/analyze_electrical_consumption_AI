@@ -12,7 +12,7 @@ st.set_page_config(page_title="Análise de Consumo de Energia", layout="wide")
 st.title("🔍 Análise de Consumo de Energia com Detecção de Fraude")
 
 # Configuração da API do Google Generative AI
-generai.configure(api_key="SUA_CHAVE_DE_API_AQUI")  # Substitua pela sua chave API
+generai.configure(api_key="AIzaSyBHouRPqa8LLjU96nEPk6UJBgswH66OJjY")  # Substitua pela sua chave API
 
 # Função para carregar dados
 @st.cache_data
