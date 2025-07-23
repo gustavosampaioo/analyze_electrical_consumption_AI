@@ -149,6 +149,18 @@ def generate_pdf(data_info, metrics, gemini_analysis, interpretation, df, cm_rf,
     
     with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmpfile:
         plt.figure(figsize=(8, 4))
+        plt.plot(df.set_index('data')['consumo_minimo_noturno'])
+        plt.title('Consumo Mínimo Noturno')
+        plt.xlabel('Data')
+        plt.ylabel('Consumo (kWh)')
+        plt.tight_layout()
+        plt.savefig(tmpfile.name, dpi=100)
+        plt.close()
+        pdf.add_image(tmpfile.name)
+        os.unlink(tmpfile.name)
+    
+    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmpfile:
+        plt.figure(figsize=(8, 4))
         plt.plot(df.set_index('data')['desvio_padrao_diario'])
         plt.title('Variação Diária (Desvio Padrão)')
         plt.xlabel('Data')
