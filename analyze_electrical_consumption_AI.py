@@ -12,6 +12,9 @@ from sklearn.metrics import (accuracy_score, precision_score,
 import matplotlib.pyplot as plt
 import seaborn as sns
 import google.generativeai as generai
+from fpdf import FPDF
+import base64
+from datetime import datetime
 
 # Configuração inicial
 st.set_page_config(page_title="Análise de Consumo de Energia", layout="wide")
@@ -19,6 +22,66 @@ st.title("🔍 Análise de Consumo de Energia com Detecção de Fraude")
 
 # Configuração da API do Google Generative AI
 generai.configure(api_key="AIzaSyBHouRPqa8LLjU96nEPk6UJBgswH66OJjY")  # Substitua pela sua chave API
+
+# Classe para gerar PDF
+class PDF(FPDF):
+    def header(self):
+        self.set_font('Arial', 'B', 12)
+        self.cell(0, 10, 'Relatório de Análise de Consumo de Energia', 0, 1, 'C')
+        self.ln(10)
+    
+    def footer(self):
+        self.set_y(-15)
+        self.set_font('Arial', 'I', 8)
+        self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
+    
+    def add_section_title(self, title):
+        self.set_font('Arial', 'B', 12)
+        self.cell(0, 10, title, 0, 1)
+        self.ln(5)
+    
+    def add_content(self, text):
+        self.set_font('Arial', '', 10)
+        self.multi_cell(0, 5, text)
+        self.ln()
+
+# Função para gerar PDF
+def generate_pdf(data_info, metrics, gemini_analysis, interpretation):
+    pdf = PDF()
+    pdf.add_page()
+    
+    # Cabeçalho
+    pdf.set_font('Arial', 'B', 16)
+    pdf.cell(0, 10, 'Relatório Completo de Análise', 0, 1, 'C')
+    pdf.ln(10)
+    
+    # Data e hora
+    pdf.set_font('Arial', 'I', 10)
+    pdf.cell(0, 10, f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}", 0, 1)
+    pdf.ln(10)
+    
+    # Seção 1: Dados Analisados
+    pdf.add_section_title("1. Dados Analisados")
+    pdf.add_content(data_info)
+    
+    # Seção 2: Métricas do Modelo
+    pdf.add_section_title("2. Métricas do Modelo")
+    pdf.add_content(metrics)
+    
+    # Seção 3: Análise Avançada
+    pdf.add_section_title("3. Análise Avançada (Gemini)")
+    pdf.add_content(gemini_analysis)
+    
+    # Seção 4: Interpretação
+    pdf.add_section_title("4. Guia de Interpretação")
+    pdf.add_content(interpretation)
+    
+    return pdf
+
+# Função para criar link de download do PDF
+def create_download_link(pdf, filename):
+    b64 = base64.b64encode(pdf.output(dest='S').encode('latin-1')).decode('latin-1')
+    return f'<a href="data:application/octet-stream;base64,{b64}" download="{filename}">Clique para baixar o relatório PDF</a>'
 
 # Função para encontrar arquivo no Desktop
 def find_csv_file():
@@ -215,6 +278,7 @@ def main():
             st.pyplot(fig)
         
         # Análise com IA generativa
+        gemini_analysis = None
         if st.button("🧠 Obter Análise Avançada com Gemini"):
             with st.spinner("Analisando dados com Gemini 1.5 Flash..."):
                 try:
@@ -240,32 +304,82 @@ def main():
                     """
                     
                     # Chamar a API do Google
-                    analysis = analyze_with_ai(data_summary, metrics)
+                    gemini_analysis = analyze_with_ai(data_summary, metrics)
+                    st.session_state['gemini_analysis'] = gemini_analysis
                     
                     st.subheader("📝 Análise com Gemini 1.5 Flash")
-                    st.markdown(analysis)
+                    st.markdown(gemini_analysis)
                 except Exception as e:
                     st.error(f"Erro na análise com Gemini: {str(e)}")
         
         # Seção de interpretação
         st.subheader("🔍 Guia de Interpretação")
+        interpretation = """
+        **Acurácia** (Accuracy):  
+        > Porcentagem total de previsões corretas. Útil para conjuntos balanceados.
+
+        **Precisão** (Precision):  
+        > Dos alertas de fraude emitidos, quantos eram realmente fraudes.
+
+        **Recall** (Sensibilidade):  
+        > Das fraudes reais existentes, quantas foram detectadas.
+
+        **Matriz de Confusão**:
+        - **TP** (True Positive): Fraudes detectadas corretamente
+        - **FP** (False Positive): Consumos normais classificados como fraude
+        - **TN** (True Negative): Consumos normais corretamente identificados
+        - **FN** (False Negative): Fraudes não detectadas
+        """
         with st.expander("Como interpretar essas métricas?"):
-            st.markdown("""
-            **Acurácia** (Accuracy):  
-            > Porcentagem total de previsões corretas. Útil para conjuntos balanceados.
-
-            **Precisão** (Precision):  
-            > Dos alertas de fraude emitidos, quantos eram realmente fraudes.
-
-            **Recall** (Sensibilidade):  
-            > Das fraudes reais existentes, quantas foram detectadas.
-
-            **Matriz de Confusão**:
-            - **TP** (True Positive): Fraudes detectadas corretamente
-            - **FP** (False Positive): Consumos normais classificados como fraude
-            - **TN** (True Negative): Consumos normais corretamente identificados
-            - **FN** (False Negative): Fraudes não detectadas
-            """)
+            st.markdown(interpretation)
+        
+        # Geração do relatório PDF
+        if st.button("📄 Gerar Relatório PDF"):
+            with st.spinner("Gerando relatório..."):
+                try:
+                    # Preparar dados para o PDF
+                    data_info = f"""
+                    Resumo dos dados analisados:
+                    {df.describe().to_string()}
+                    
+                    Total de registros: {len(df)}
+                    Período coberto: {df['data'].min()} a {df['data'].max()}
+                    """
+                    
+                    metrics_info = f"""
+                    **Métricas do Random Forest:**
+                    - Acurácia: {accuracy_rf:.2%}
+                    - Precisão: {precision_rf:.2%}
+                    - Recall: {recall_rf:.2%}
+                    
+                    **Métricas da Rede Neural:**
+                    - Acurácia: {accuracy_nn:.2%}
+                    - Precisão: {precision_nn:.2%}
+                    - Recall: {recall_nn:.2%}
+                    
+                    **Matriz de Confusão (RF):**
+                    {cm_rf}
+                    
+                    **Matriz de Confusão (RN):**
+                    {cm_nn}
+                    """
+                    
+                    # Obter análise do Gemini se existir
+                    gemini_content = st.session_state.get('gemini_analysis', "Nenhuma análise Gemini foi gerada ainda.")
+                    
+                    # Gerar PDF
+                    pdf = generate_pdf(
+                        data_info=data_info,
+                        metrics=metrics_info,
+                        gemini_analysis=gemini_content,
+                        interpretation=interpretation
+                    )
+                    
+                    # Criar link de download
+                    st.markdown(create_download_link(pdf, "relatorio_analise_energia.pdf"), unsafe_allow_html=True)
+                    
+                except Exception as e:
+                    st.error(f"Erro ao gerar relatório: {str(e)}")
 
 if __name__ == "__main__":
     main()
