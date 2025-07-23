@@ -1,5 +1,4 @@
 google-generativeai
-tensorflow
 pandas
 scikit-learn
 matplotlib
