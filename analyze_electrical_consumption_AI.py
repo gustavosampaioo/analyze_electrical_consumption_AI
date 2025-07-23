@@ -95,7 +95,7 @@ def generate_pdf(data_info, metrics, gemini_analysis, interpretation, df, cm_rf,
         plt.plot(df.set_index('data')['consumo_medio_diario'])
         plt.title('Consumo Médio Diário')
         plt.xlabel('Data')
-        plt.ylabel('Consumo')
+        plt.ylabel('Consumo (kWh)')
         plt.tight_layout()
         plt.savefig(tmpfile.name, dpi=100)
         plt.close()
@@ -104,10 +104,22 @@ def generate_pdf(data_info, metrics, gemini_analysis, interpretation, df, cm_rf,
     
     with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmpfile:
         plt.figure(figsize=(8, 4))
-        plt.bar(df.set_index('data').index, df.set_index('data')['consumo_minimo_noturno'])
-        plt.title('Consumo Mínimo Noturno')
+        plt.plot(df.set_index('data')['consumo_maximo_diario'])
+        plt.title('Consumo Máximo Diário')
         plt.xlabel('Data')
-        plt.ylabel('Consumo')
+        plt.ylabel('Consumo (kWh)')
+        plt.tight_layout()
+        plt.savefig(tmpfile.name, dpi=100)
+        plt.close()
+        pdf.add_image(tmpfile.name)
+        os.unlink(tmpfile.name)
+    
+    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmpfile:
+        plt.figure(figsize=(8, 4))
+        plt.plot(df.set_index('data')['desvio_padrao_diario'])
+        plt.title('Variação Diária (Desvio Padrão)')
+        plt.xlabel('Data')
+        plt.ylabel('Desvio Padrão (kWh)')
         plt.tight_layout()
         plt.savefig(tmpfile.name, dpi=100)
         plt.close()
@@ -249,6 +261,8 @@ def main():
         
         # Análise exploratória
         st.subheader("📊 Análise Exploratória")
+        
+        # Gráficos na primeira linha
         col1, col2 = st.columns(2)
         
         with col1:
@@ -256,8 +270,19 @@ def main():
             st.line_chart(df.set_index('data')['consumo_medio_diario'])
         
         with col2:
+            st.write("**Consumo Máximo Diário**")
+            st.line_chart(df.set_index('data')['consumo_maximo_diario'])
+        
+        # Gráficos na segunda linha
+        col3, col4 = st.columns(2)
+        
+        with col3:
             st.write("**Consumo Mínimo Noturno**")
             st.bar_chart(df.set_index('data')['consumo_minimo_noturno'])
+        
+        with col4:
+            st.write("**Variação Diária (Desvio Padrão)**")
+            st.line_chart(df.set_index('data')['desvio_padrao_diario'])
         
         # Pré-processamento
         features = df.iloc[:, 1:25]
