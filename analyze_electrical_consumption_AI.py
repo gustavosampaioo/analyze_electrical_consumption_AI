@@ -11,17 +11,19 @@ from sklearn.metrics import (accuracy_score, precision_score,
                            classification_report)
 import matplotlib.pyplot as plt
 import seaborn as sns
-import google.generativeai as generai
+import google.generativeai as genai
 from fpdf import FPDF
 import base64
 from datetime import datetime
+import os
+import tempfile
 
 # Configuração inicial
 st.set_page_config(page_title="Análise de Consumo de Energia", layout="wide")
 st.title("🔍 Análise de Consumo de Energia com Detecção de Fraude")
 
 # Configuração da API do Google Generative AI
-generai.configure(api_key="AIzaSyBHouRPqa8LLjU96nEPk6UJBgswH66OJjY")  # Substitua pela sua chave API
+genai.configure(api_key="SUA_CHAVE_API_AQUI")  # Substitua pela sua chave API
 
 # Classe para gerar PDF
 class PDF(FPDF):
@@ -44,61 +46,40 @@ class PDF(FPDF):
         self.set_font('Arial', '', 10)
         self.multi_cell(0, 5, text)
         self.ln()
+    
+    def add_image(self, image_path, w=180):
+        self.image(image_path, x=10, w=w)
+        self.ln()
 
-# Função para gerar PDF
-def generate_pdf(data_info, metrics, gemini_analysis, interpretation):
-    pdf = PDF()
-    pdf.add_page()
-    
-    # Cabeçalho
-    pdf.set_font('Arial', 'B', 16)
-    pdf.cell(0, 10, 'Relatório Completo de Análise', 0, 1, 'C')
-    pdf.ln(10)
-    
-    # Data e hora
-    pdf.set_font('Arial', 'I', 10)
-    pdf.cell(0, 10, f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}", 0, 1)
-    pdf.ln(10)
-    
-    # Seção 1: Dados Analisados
-    pdf.add_section_title("1. Dados Analisados")
-    pdf.add_content(data_info)
-    
-    # Seção 2: Métricas do Modelo
-    pdf.add_section_title("2. Métricas do Modelo")
-    pdf.add_content(metrics)
-    
-    # Seção 3: Análise Avançada
-    pdf.add_section_title("3. Análise Avançada (Gemini)")
-    pdf.add_content(gemini_analysis)
-    
-    # Seção 4: Interpretação
-    pdf.add_section_title("4. Guia de Interpretação")
-    pdf.add_content(interpretation)
-    
-    return pdf
+# Funções auxiliares
+def save_figure(fig):
+    """Salva uma figura matplotlib temporariamente"""
+    temp_dir = tempfile.mkdtemp()
+    image_path = os.path.join(temp_dir, 'temp_figure.png')
+    fig.savefig(image_path, bbox_inches='tight', dpi=300)
+    plt.close(fig)
+    return image_path
 
-# Função para criar link de download do PDF
 def create_download_link(pdf, filename):
+    """Cria link de download para o PDF"""
     b64 = base64.b64encode(pdf.output(dest='S').encode('latin-1')).decode('latin-1')
-    return f'<a href="data:application/octet-stream;base64,{b64}" download="{filename}">Clique para baixar o relatório PDF</a>'
+    return f'<a href="data:application/octet-stream;base64,{b64}" download="{filename}">Baixar Relatório PDF</a>'
 
-# Função para encontrar arquivo no Desktop
 def find_csv_file():
+    """Encontra arquivo CSV no Desktop"""
     desktop_paths = [
         Path.home() / "Desktop",
         Path.home() / "Área de Trabalho",
         Path.home() / "Escritorio",
     ]
-    
     for desktop in desktop_paths:
         if desktop.exists():
             for file in desktop.glob("dados_consumo*.csv"):
                 return str(file)
     return None
 
-# Função para carregar dados
 def load_data(uploaded_file=None):
+    """Carrega os dados do arquivo CSV"""
     if uploaded_file is not None:
         try:
             df = pd.read_csv(uploaded_file)
@@ -121,9 +102,9 @@ def load_data(uploaded_file=None):
     st.warning("Nenhum arquivo encontrado. Por favor, faça upload do arquivo.")
     return None
 
-# Função para criar modelo neural (usando scikit-learn)
 def create_nn_model():
-    model = MLPClassifier(
+    """Cria modelo de rede neural"""
+    return MLPClassifier(
         hidden_layer_sizes=(128, 64),
         activation='relu',
         solver='adam',
@@ -133,12 +114,10 @@ def create_nn_model():
         early_stopping=True,
         validation_fraction=0.2
     )
-    return model
 
-# Função para análise com IA generativa
 def analyze_with_ai(data_summary, metrics):
-    model = generai.GenerativeModel("gemini-1.5-flash-latest")
-    
+    """Analisa dados com Gemini"""
+    model = genai.GenerativeModel("gemini-pro")
     prompt = f"""
     Você é um especialista em análise de dados de consumo de energia e detecção de fraudes. 
     Analise os seguintes dados e métricas:
@@ -158,79 +137,101 @@ def analyze_with_ai(data_summary, metrics):
     
     Formate a resposta em markdown com títulos e bullet points.
     """
-    
     response = model.generate_content(prompt)
     return response.text
 
-# Função principal
+def generate_pdf_report(data_info, metrics, gemini_analysis, interpretation, images):
+    """Gera o relatório PDF completo"""
+    pdf = PDF()
+    pdf.add_page()
+    
+    # Cabeçalho
+    pdf.set_font('Arial', 'B', 16)
+    pdf.cell(0, 10, 'Relatório Completo de Análise', 0, 1, 'C')
+    pdf.ln(10)
+    pdf.set_font('Arial', 'I', 10)
+    pdf.cell(0, 10, f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}", 0, 1)
+    pdf.ln(10)
+    
+    # Seção 1: Dados Analisados
+    pdf.add_section_title("1. Dados Analisados")
+    pdf.add_content(data_info)
+    
+    # Gráficos exploratórios
+    pdf.add_section_title("1.1 Análise Exploratória")
+    for img in images[:2]:
+        pdf.add_image(img)
+    
+    # Seção 2: Métricas
+    pdf.add_section_title("2. Métricas dos Modelos")
+    pdf.add_content(metrics)
+    
+    # Matrizes de confusão
+    pdf.add_section_title("2.1 Matrizes de Confusão")
+    for img in images[2:]:
+        pdf.add_image(img)
+    
+    # Seção 3: Análise Gemini
+    pdf.add_section_title("3. Análise Avançada")
+    pdf.add_content(gemini_analysis)
+    
+    # Seção 4: Interpretação
+    pdf.add_section_title("4. Guia de Interpretação")
+    pdf.add_content(interpretation)
+    
+    return pdf
+
 def main():
-    st.sidebar.header("Configurações de Arquivo")
+    """Função principal"""
+    st.sidebar.header("Configurações")
+    uploaded_file = st.sidebar.file_uploader("Carregar CSV", type=["csv"])
     
-    # Opção de upload
-    uploaded_file = st.sidebar.file_uploader(
-        "Carregar arquivo CSV", 
-        type=["csv"],
-        help="Selecione o arquivo dados_consumo.csv"
-    )
-    
-    # Carrega os dados
+    # Carrega dados
     df = st.session_state.get('df', None)
     if uploaded_file or not df:
         df = load_data(uploaded_file)
     
     if df is not None:
-        st.sidebar.header("Visualização")
-        show_raw_data = st.sidebar.checkbox("Mostrar dados brutos")
-        
-        if show_raw_data:
-            st.subheader("Dados de Consumo")
-            st.dataframe(df)
-        
-        # Análise exploratória
-        st.subheader("📊 Análise Exploratória")
+        # Análise Exploratória
+        st.header("📊 Análise Exploratória")
         col1, col2 = st.columns(2)
         
         with col1:
             st.write("**Consumo Médio Diário**")
-            st.line_chart(df.set_index('data')['consumo_medio_diario'])
+            fig1, ax1 = plt.subplots()
+            df.set_index('data')['consumo_medio_diario'].plot(ax=ax1)
+            st.pyplot(fig1)
         
         with col2:
             st.write("**Consumo Mínimo Noturno**")
-            st.bar_chart(df.set_index('data')['consumo_minimo_noturno'])
+            fig2, ax2 = plt.subplots()
+            df.set_index('data')['consumo_minimo_noturno'].plot(kind='bar', ax=ax2)
+            st.pyplot(fig2)
         
-        # Pré-processamento avançado
-        features = df.iloc[:, 1:25]  # Colunas h1-h24
+        # Pré-processamento
+        features = df.iloc[:, 1:25]
         target = df['status_fraude']
-        
-        # Normalização dos dados
         scaler = StandardScaler()
         features_scaled = scaler.fit_transform(features)
+        X_train, X_test, y_train, y_test = train_test_split(features_scaled, target, test_size=0.3, random_state=42)
         
-        # Divisão treino-validação-teste
-        X_train, X_temp, y_train, y_temp = train_test_split(
-            features_scaled, target, test_size=0.4, random_state=42
-        )
-        X_val, X_test, y_val, y_test = train_test_split(
-            X_temp, y_temp, test_size=0.5, random_state=42
-        )
+        # Modelagem
+        st.header("🤖 Modelos de Detecção")
         
-        # Treinar modelos
-        st.subheader("🤖 Modelos de Detecção")
-        
-        # Modelo Random Forest
-        st.write("#### Random Forest")
+        # Random Forest
+        st.subheader("Random Forest")
         rf_model = RandomForestClassifier(random_state=42)
         rf_model.fit(X_train, y_train)
         y_pred_rf = rf_model.predict(X_test)
         
-        # Modelo Neural Network (MLP)
-        st.write("#### Rede Neural (MLP)")
+        # Rede Neural
+        st.subheader("Rede Neural (MLP)")
         nn_model = create_nn_model()
         nn_model.fit(X_train, y_train)
         y_pred_nn = nn_model.predict(X_test)
         
-        # Avaliação dos modelos
-        st.subheader("📈 Métricas de Avaliação")
+        # Avaliação
+        st.header("📈 Métricas de Avaliação")
         
         # Métricas RF
         accuracy_rf = accuracy_score(y_test, y_pred_rf)
@@ -244,142 +245,123 @@ def main():
         recall_nn = recall_score(y_test, y_pred_nn)
         cm_nn = confusion_matrix(y_test, y_pred_nn)
         
-        # Exibição comparativa
+        # Exibição
         col1, col2 = st.columns(2)
         
         with col1:
-            st.write("**Random Forest**")
-            st.metric("Acurácia", f"{accuracy_rf:.2%}")
-            st.metric("Precisão", f"{precision_rf:.2%}")
-            st.metric("Recall", f"{recall_rf:.2%}")
+            st.metric("Acurácia RF", f"{accuracy_rf:.2%}")
+            st.metric("Precisão RF", f"{precision_rf:.2%}")
+            st.metric("Recall RF", f"{recall_rf:.2%}")
             
-            st.write("**Matriz de Confusão**")
-            fig, ax = plt.subplots()
-            sns.heatmap(cm_rf, annot=True, fmt='d', cmap='Blues',
-                        xticklabels=['Normal', 'Fraude'],
-                        yticklabels=['Normal', 'Fraude'])
-            plt.ylabel('Verdadeiro')
-            plt.xlabel('Predito')
-            st.pyplot(fig)
+            fig3, ax3 = plt.subplots()
+            sns.heatmap(cm_rf, annot=True, fmt='d', cmap='Blues', 
+                       xticklabels=['Normal', 'Fraude'], 
+                       yticklabels=['Normal', 'Fraude'])
+            st.pyplot(fig3)
         
         with col2:
-            st.write("**Rede Neural (MLP)**")
-            st.metric("Acurácia", f"{accuracy_nn:.2%}")
-            st.metric("Precisão", f"{precision_nn:.2%}")
-            st.metric("Recall", f"{recall_nn:.2%}")
+            st.metric("Acurácia NN", f"{accuracy_nn:.2%}")
+            st.metric("Precisão NN", f"{precision_nn:.2%}")
+            st.metric("Recall NN", f"{recall_nn:.2%}")
             
-            st.write("**Matriz de Confusão**")
-            fig, ax = plt.subplots()
+            fig4, ax4 = plt.subplots()
             sns.heatmap(cm_nn, annot=True, fmt='d', cmap='Greens',
-                        xticklabels=['Normal', 'Fraude'],
-                        yticklabels=['Normal', 'Fraude'])
-            plt.ylabel('Verdadeiro')
-            plt.xlabel('Predito')
-            st.pyplot(fig)
+                       xticklabels=['Normal', 'Fraude'],
+                       yticklabels=['Normal', 'Fraude'])
+            st.pyplot(fig4)
         
-        # Análise com IA generativa
-        gemini_analysis = None
-        if st.button("🧠 Obter Análise Avançada com Gemini"):
-            with st.spinner("Analisando dados com Gemini 1.5 Flash..."):
+        # Análise Gemini
+        st.header("🧠 Análise Avançada")
+        if st.button("Gerar Análise com Gemini"):
+            with st.spinner("Analisando..."):
                 try:
-                    # Preparar resumo dos dados
                     data_summary = df.describe().to_string()
-                    
-                    # Preparar métricas combinadas
                     metrics = f"""
-                    **Random Forest:**
+                    Random Forest:
                     - Acurácia: {accuracy_rf:.2%}
                     - Precisão: {precision_rf:.2%}
                     - Recall: {recall_rf:.2%}
-                    - Matriz de Confusão: \n{cm_rf}
                     
-                    **Rede Neural:**
+                    Rede Neural:
                     - Acurácia: {accuracy_nn:.2%}
                     - Precisão: {precision_nn:.2%}
                     - Recall: {recall_nn:.2%}
-                    - Matriz de Confusão: \n{cm_nn}
-                    
-                    **Relatório de Classificação (RF):**
-                    \n{classification_report(y_test, y_pred_rf)}
                     """
-                    
-                    # Chamar a API do Google
-                    gemini_analysis = analyze_with_ai(data_summary, metrics)
-                    st.session_state['gemini_analysis'] = gemini_analysis
-                    
-                    st.subheader("📝 Análise com Gemini 1.5 Flash")
-                    st.markdown(gemini_analysis)
+                    analysis = analyze_with_ai(data_summary, metrics)
+                    st.session_state['gemini_analysis'] = analysis
+                    st.markdown(analysis)
                 except Exception as e:
-                    st.error(f"Erro na análise com Gemini: {str(e)}")
+                    st.error(f"Erro: {str(e)}")
         
-        # Seção de interpretação
-        st.subheader("🔍 Guia de Interpretação")
+        # Guia de Interpretação
+        st.header("🔍 Guia de Interpretação")
         interpretation = """
-        **Acurácia** (Accuracy):  
-        > Porcentagem total de previsões corretas. Útil para conjuntos balanceados.
-
-        **Precisão** (Precision):  
-        > Dos alertas de fraude emitidos, quantos eram realmente fraudes.
-
-        **Recall** (Sensibilidade):  
-        > Das fraudes reais existentes, quantas foram detectadas.
-
+        **Acurácia**: Porcentagem de previsões corretas\n
+        **Precisão**: Fraudes detectadas corretamente\n
+        **Recall**: Fraudes reais identificadas\n
         **Matriz de Confusão**:
-        - **TP** (True Positive): Fraudes detectadas corretamente
-        - **FP** (False Positive): Consumos normais classificados como fraude
-        - **TN** (True Negative): Consumos normais corretamente identificados
-        - **FN** (False Negative): Fraudes não detectadas
+        - TP: Verdadeiros positivos
+        - FP: Falsos positivos
+        - TN: Verdadeiros negativos
+        - FN: Falsos negativos
         """
-        with st.expander("Como interpretar essas métricas?"):
-            st.markdown(interpretation)
+        st.markdown(interpretation)
         
-        # Geração do relatório PDF
-        if st.button("📄 Gerar Relatório PDF"):
-            with st.spinner("Gerando relatório..."):
+        # Geração do PDF
+        st.header("📄 Gerar Relatório")
+        if st.button("Criar Relatório PDF"):
+            with st.spinner("Gerando PDF..."):
                 try:
-                    # Preparar dados para o PDF
-                    data_info = f"""
-                    Resumo dos dados analisados:
-                    {df.describe().to_string()}
+                    # Salvar figuras
+                    image_paths = [
+                        save_figure(fig1),
+                        save_figure(fig2),
+                        save_figure(fig3),
+                        save_figure(fig4)
+                    ]
                     
-                    Total de registros: {len(df)}
-                    Período coberto: {df['data'].min()} a {df['data'].max()}
+                    # Conteúdo do relatório
+                    data_info = f"""
+                    Dados analisados:
+                    - Registros: {len(df)}
+                    - Período: {df['data'].min()} a {df['data'].max()}
+                    - Variáveis: {', '.join(df.columns[1:25])}
                     """
                     
                     metrics_info = f"""
-                    **Métricas do Random Forest:**
+                    **Random Forest**
                     - Acurácia: {accuracy_rf:.2%}
                     - Precisão: {precision_rf:.2%}
                     - Recall: {recall_rf:.2%}
                     
-                    **Métricas da Rede Neural:**
+                    **Rede Neural**
                     - Acurácia: {accuracy_nn:.2%}
                     - Precisão: {precision_nn:.2%}
                     - Recall: {recall_nn:.2%}
-                    
-                    **Matriz de Confusão (RF):**
-                    {cm_rf}
-                    
-                    **Matriz de Confusão (RN):**
-                    {cm_nn}
                     """
                     
-                    # Obter análise do Gemini se existir
-                    gemini_content = st.session_state.get('gemini_analysis', "Nenhuma análise Gemini foi gerada ainda.")
+                    gemini_content = st.session_state.get('gemini_analysis', "Nenhuma análise Gemini gerada")
                     
                     # Gerar PDF
-                    pdf = generate_pdf(
+                    pdf = generate_pdf_report(
                         data_info=data_info,
                         metrics=metrics_info,
                         gemini_analysis=gemini_content,
-                        interpretation=interpretation
+                        interpretation=interpretation,
+                        images=image_paths
                     )
                     
-                    # Criar link de download
-                    st.markdown(create_download_link(pdf, "relatorio_analise_energia.pdf"), unsafe_allow_html=True)
+                    # Download
+                    st.markdown(create_download_link(pdf, "relatorio_consumo_energia.pdf"), unsafe_allow_html=True)
+                    
+                    # Limpar arquivos
+                    for img in image_paths:
+                        if os.path.exists(img):
+                            os.remove(img)
+                    os.rmdir(os.path.dirname(image_paths[0]))
                     
                 except Exception as e:
-                    st.error(f"Erro ao gerar relatório: {str(e)}")
+                    st.error(f"Erro ao gerar PDF: {str(e)}")
 
 if __name__ == "__main__":
     main()
