@@ -23,7 +23,7 @@ st.set_page_config(page_title="Análise de Consumo de Energia", layout="wide")
 st.title("🔍 Análise de Consumo de Energia com Detecção de Fraude")
 
 # Configuração da API do Google Generative AI
-generai.configure(api_key="AIzaSyBHouRPqa8LLjU96nEPk6UJBgswH66OJjY")  # Substitua pela sua chave API
+generai.configure(api_key="AIzaSyBHouRPqa8LLjU96nEPk6UJBgswH66OJjY")
 
 # Classe para gerar PDF
 class PDF(FPDF):
@@ -51,6 +51,25 @@ class PDF(FPDF):
         self.image(image_path, x=10, w=width)
         self.ln(5)
 
+# Função para plotar matriz de confusão com legendas
+def plot_confusion_matrix_with_labels(cm, title, cmap):
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm, annot=True, fmt='d', cmap=cmap,
+                xticklabels=['Normal (TN/FP)', 'Fraude (FN/TP)'],
+                yticklabels=['Normal (TN/FN)', 'Fraude (FP/TP)'])
+    
+    plt.text(0.5, -0.3, 
+             "TN: Consumos normais corretamente identificados\n"
+             "FP: Consumos normais classificados como fraude\n"
+             "FN: Fraudes não detectadas\n"
+             "TP: Fraudes detectadas corretamente",
+             ha='center', va='center', transform=plt.gca().transAxes)
+    
+    plt.title(title)
+    plt.ylabel('Verdadeiro')
+    plt.xlabel('Predito')
+    plt.tight_layout()
+
 # Função para gerar PDF
 def generate_pdf(data_info, metrics, gemini_analysis, interpretation, df, cm_rf, cm_nn):
     pdf = PDF()
@@ -70,7 +89,7 @@ def generate_pdf(data_info, metrics, gemini_analysis, interpretation, df, cm_rf,
     pdf.add_section_title("1. Dados Analisados")
     pdf.add_content(data_info)
     
-    # Gráfico de Consumo Médio Diário
+    # Gráficos de consumo
     with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmpfile:
         plt.figure(figsize=(8, 4))
         plt.plot(df.set_index('data')['consumo_medio_diario'])
@@ -83,7 +102,6 @@ def generate_pdf(data_info, metrics, gemini_analysis, interpretation, df, cm_rf,
         pdf.add_image(tmpfile.name)
         os.unlink(tmpfile.name)
     
-    # Gráfico de Consumo Mínimo Noturno
     with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmpfile:
         plt.figure(figsize=(8, 4))
         plt.bar(df.set_index('data').index, df.set_index('data')['consumo_minimo_noturno'])
@@ -103,32 +121,16 @@ def generate_pdf(data_info, metrics, gemini_analysis, interpretation, df, cm_rf,
     # Matrizes de Confusão
     pdf.add_section_title("Matrizes de Confusão")
     
-    # Matriz de Confusão Random Forest
     with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmpfile:
-        plt.figure(figsize=(6, 4))
-        sns.heatmap(cm_rf, annot=True, fmt='d', cmap='Blues',
-                    xticklabels=['Normal', 'Fraude'],
-                    yticklabels=['Normal', 'Fraude'])
-        plt.title('Matriz de Confusão - Random Forest')
-        plt.ylabel('Verdadeiro')
-        plt.xlabel('Predito')
-        plt.tight_layout()
-        plt.savefig(tmpfile.name, dpi=100)
+        plot_confusion_matrix_with_labels(cm_rf, "Matriz de Confusão - Random Forest", 'Blues')
+        plt.savefig(tmpfile.name, dpi=100, bbox_inches='tight')
         plt.close()
         pdf.image(tmpfile.name, x=10, w=90)
         os.unlink(tmpfile.name)
     
-    # Matriz de Confusão Rede Neural
     with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmpfile:
-        plt.figure(figsize=(6, 4))
-        sns.heatmap(cm_nn, annot=True, fmt='d', cmap='Greens',
-                    xticklabels=['Normal', 'Fraude'],
-                    yticklabels=['Normal', 'Fraude'])
-        plt.title('Matriz de Confusão - Rede Neural')
-        plt.ylabel('Verdadeiro')
-        plt.xlabel('Predito')
-        plt.tight_layout()
-        plt.savefig(tmpfile.name, dpi=100)
+        plot_confusion_matrix_with_labels(cm_nn, "Matriz de Confusão - Rede Neural", 'Greens')
+        plt.savefig(tmpfile.name, dpi=100, bbox_inches='tight')
         plt.close()
         pdf.image(tmpfile.name, x=110, w=90)
         pdf.ln(10)
@@ -187,7 +189,7 @@ def load_data(uploaded_file=None):
     st.warning("Nenhum arquivo encontrado. Por favor, faça upload do arquivo.")
     return None
 
-# Função para criar modelo neural (usando scikit-learn)
+# Função para criar modelo neural
 def create_nn_model():
     model = MLPClassifier(
         hidden_layer_sizes=(128, 64),
@@ -231,15 +233,8 @@ def analyze_with_ai(data_summary, metrics):
 # Função principal
 def main():
     st.sidebar.header("Configurações de Arquivo")
+    uploaded_file = st.sidebar.file_uploader("Carregar arquivo CSV", type=["csv"])
     
-    # Opção de upload
-    uploaded_file = st.sidebar.file_uploader(
-        "Carregar arquivo CSV", 
-        type=["csv"],
-        help="Selecione o arquivo dados_consumo.csv"
-    )
-    
-    # Carrega os dados
     df = st.session_state.get('df', None)
     if uploaded_file or not df:
         df = load_data(uploaded_file)
@@ -264,15 +259,12 @@ def main():
             st.write("**Consumo Mínimo Noturno**")
             st.bar_chart(df.set_index('data')['consumo_minimo_noturno'])
         
-        # Pré-processamento avançado
-        features = df.iloc[:, 1:25]  # Colunas h1-h24
+        # Pré-processamento
+        features = df.iloc[:, 1:25]
         target = df['status_fraude']
-        
-        # Normalização dos dados
         scaler = StandardScaler()
         features_scaled = scaler.fit_transform(features)
         
-        # Divisão treino-validação-teste
         X_train, X_temp, y_train, y_temp = train_test_split(
             features_scaled, target, test_size=0.4, random_state=42
         )
@@ -283,28 +275,26 @@ def main():
         # Treinar modelos
         st.subheader("🤖 Modelos de Detecção")
         
-        # Modelo Random Forest
+        # Random Forest
         st.write("#### Random Forest")
         rf_model = RandomForestClassifier(random_state=42)
         rf_model.fit(X_train, y_train)
         y_pred_rf = rf_model.predict(X_test)
         
-        # Modelo Neural Network (MLP)
+        # Rede Neural
         st.write("#### Rede Neural (MLP)")
         nn_model = create_nn_model()
         nn_model.fit(X_train, y_train)
         y_pred_nn = nn_model.predict(X_test)
         
-        # Avaliação dos modelos
+        # Avaliação
         st.subheader("📈 Métricas de Avaliação")
         
-        # Métricas RF
         accuracy_rf = accuracy_score(y_test, y_pred_rf)
         precision_rf = precision_score(y_test, y_pred_rf)
         recall_rf = recall_score(y_test, y_pred_rf)
         cm_rf = confusion_matrix(y_test, y_pred_rf)
         
-        # Métricas NN
         accuracy_nn = accuracy_score(y_test, y_pred_nn)
         precision_nn = precision_score(y_test, y_pred_nn)
         recall_nn = recall_score(y_test, y_pred_nn)
@@ -320,13 +310,9 @@ def main():
             st.metric("Recall", f"{recall_rf:.2%}")
             
             st.write("**Matriz de Confusão**")
-            fig, ax = plt.subplots()
-            sns.heatmap(cm_rf, annot=True, fmt='d', cmap='Blues',
-                        xticklabels=['Normal', 'Fraude'],
-                        yticklabels=['Normal', 'Fraude'])
-            plt.ylabel('Verdadeiro')
-            plt.xlabel('Predito')
-            st.pyplot(fig)
+            plot_confusion_matrix_with_labels(cm_rf, "Matriz de Confusão - Random Forest", 'Blues')
+            st.pyplot(plt.gcf())
+            plt.close()
         
         with col2:
             st.write("**Rede Neural (MLP)**")
@@ -335,23 +321,17 @@ def main():
             st.metric("Recall", f"{recall_nn:.2%}")
             
             st.write("**Matriz de Confusão**")
-            fig, ax = plt.subplots()
-            sns.heatmap(cm_nn, annot=True, fmt='d', cmap='Greens',
-                        xticklabels=['Normal', 'Fraude'],
-                        yticklabels=['Normal', 'Fraude'])
-            plt.ylabel('Verdadeiro')
-            plt.xlabel('Predito')
-            st.pyplot(fig)
+            plot_confusion_matrix_with_labels(cm_nn, "Matriz de Confusão - Rede Neural", 'Greens')
+            st.pyplot(plt.gcf())
+            plt.close()
         
-        # Análise com IA generativa
+        # Análise com IA
         gemini_analysis = None
         if st.button("🧠 Obter Análise Avançada com Gemini"):
             with st.spinner("Analisando dados com Gemini 1.5 Flash..."):
                 try:
-                    # Preparar resumo dos dados
                     data_summary = df.describe().to_string()
                     
-                    # Preparar métricas combinadas
                     metrics = f"""
                     **Random Forest:**
                     - Acurácia: {accuracy_rf:.2%}
@@ -369,7 +349,6 @@ def main():
                     \n{classification_report(y_test, y_pred_rf)}
                     """
                     
-                    # Chamar a API do Google
                     gemini_analysis = analyze_with_ai(data_summary, metrics)
                     st.session_state['gemini_analysis'] = gemini_analysis
                     
@@ -378,32 +357,34 @@ def main():
                 except Exception as e:
                     st.error(f"Erro na análise com Gemini: {str(e)}")
         
-        # Seção de interpretação
+        # Interpretação
         st.subheader("🔍 Guia de Interpretação")
         interpretation = """
         **Acurácia** (Accuracy):  
-        > Porcentagem total de previsões corretas. Útil para conjuntos balanceados.
+        > Porcentagem total de previsões corretas. Fórmula: (TP + TN) / (TP + TN + FP + FN)
 
         **Precisão** (Precision):  
-        > Dos alertas de fraude emitidos, quantos eram realmente fraudes.
+        > Dos alertas de fraude emitidos, quantos eram realmente fraudes. Fórmula: TP / (TP + FP)
 
         **Recall** (Sensibilidade):  
-        > Das fraudes reais existentes, quantas foram detectadas.
+        > Das fraudes reais existentes, quantas foram detectadas. Fórmula: TP / (TP + FN)
 
         **Matriz de Confusão**:
         - **TP** (True Positive): Fraudes detectadas corretamente
         - **FP** (False Positive): Consumos normais classificados como fraude
         - **TN** (True Negative): Consumos normais corretamente identificados
         - **FN** (False Negative): Fraudes não detectadas
+
+        **F1-Score**: Média harmônica entre Precisão e Recall
+        > Fórmula: 2 * (Precision * Recall) / (Precision + Recall)
         """
         with st.expander("Como interpretar essas métricas?"):
             st.markdown(interpretation)
         
-        # Geração do relatório PDF
+        # Gerar PDF
         if st.button("📄 Gerar Relatório PDF"):
             with st.spinner("Gerando relatório..."):
                 try:
-                    # Preparar dados para o PDF
                     data_info = f"""
                     Resumo dos dados analisados:
                     {df.describe().to_string()}
@@ -424,10 +405,8 @@ def main():
                     - Recall: {recall_nn:.2%}
                     """
                     
-                    # Obter análise do Gemini se existir
                     gemini_content = st.session_state.get('gemini_analysis', "Nenhuma análise Gemini foi gerada ainda.")
                     
-                    # Gerar PDF
                     pdf = generate_pdf(
                         data_info=data_info,
                         metrics=metrics_info,
@@ -438,7 +417,6 @@ def main():
                         cm_nn=cm_nn
                     )
                     
-                    # Criar link de download
                     st.markdown(create_download_link(pdf, "relatorio_analise_energia.pdf"), unsafe_allow_html=True)
                     
                 except Exception as e:
