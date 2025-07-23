@@ -7,7 +7,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import (accuracy_score, precision_score, 
-                           recall_score, confusion_matrix, 
+                           recall_score, f1_score, confusion_matrix, 
                            classification_report)
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -70,8 +70,41 @@ def plot_confusion_matrix_with_labels(cm, title, cmap):
     plt.xlabel('Predito')
     plt.tight_layout()
 
+# Função para plotar métricas comparativas
+def plot_metrics_comparison(metrics_rf, metrics_nn):
+    labels = ['Acurácia', 'Precisão', 'Recall', 'F1-Score']
+    rf_values = [metrics_rf['accuracy'], metrics_rf['precision'], 
+                 metrics_rf['recall'], metrics_rf['f1']]
+    nn_values = [metrics_nn['accuracy'], metrics_nn['precision'], 
+                 metrics_nn['recall'], metrics_nn['f1']]
+    
+    x = np.arange(len(labels))
+    width = 0.35
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    rects1 = ax.bar(x - width/2, rf_values, width, label='Random Forest', color='skyblue')
+    rects2 = ax.bar(x + width/2, nn_values, width, label='Rede Neural', color='lightgreen')
+    
+    ax.set_ylabel('Pontuação')
+    ax.set_title('Comparação de Métricas entre Modelos')
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    ax.legend()
+    
+    # Adicionar valores nas barras
+    for rect in rects1 + rects2:
+        height = rect.get_height()
+        ax.annotate(f'{height:.2%}',
+                    xy=(rect.get_x() + rect.get_width() / 2, height),
+                    xytext=(0, 3),
+                    textcoords="offset points",
+                    ha='center', va='bottom')
+    
+    plt.tight_layout()
+    return fig
+
 # Função para gerar PDF
-def generate_pdf(data_info, metrics, gemini_analysis, interpretation, df, cm_rf, cm_nn):
+def generate_pdf(data_info, metrics, gemini_analysis, interpretation, df, cm_rf, cm_nn, metrics_comparison):
     pdf = PDF()
     pdf.add_page()
     
@@ -129,6 +162,13 @@ def generate_pdf(data_info, metrics, gemini_analysis, interpretation, df, cm_rf,
     # Seção 2: Métricas do Modelo
     pdf.add_section_title("2. Métricas do Modelo")
     pdf.add_content(metrics)
+    
+    # Gráfico de comparação de métricas
+    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmpfile:
+        metrics_comparison.savefig(tmpfile.name, dpi=100, bbox_inches='tight')
+        plt.close()
+        pdf.add_image(tmpfile.name)
+        os.unlink(tmpfile.name)
     
     # Matrizes de Confusão
     pdf.add_section_title("Matrizes de Confusão")
@@ -315,17 +355,40 @@ def main():
         # Avaliação
         st.subheader("📈 Métricas de Avaliação")
         
+        # Cálculo das métricas
         accuracy_rf = accuracy_score(y_test, y_pred_rf)
         precision_rf = precision_score(y_test, y_pred_rf)
         recall_rf = recall_score(y_test, y_pred_rf)
+        f1_rf = f1_score(y_test, y_pred_rf)
         cm_rf = confusion_matrix(y_test, y_pred_rf)
         
         accuracy_nn = accuracy_score(y_test, y_pred_nn)
         precision_nn = precision_score(y_test, y_pred_nn)
         recall_nn = recall_score(y_test, y_pred_nn)
+        f1_nn = f1_score(y_test, y_pred_nn)
         cm_nn = confusion_matrix(y_test, y_pred_nn)
         
-        # Exibição comparativa
+        # Dicionários com as métricas para plotagem
+        metrics_rf = {
+            'accuracy': accuracy_rf,
+            'precision': precision_rf,
+            'recall': recall_rf,
+            'f1': f1_rf
+        }
+        
+        metrics_nn = {
+            'accuracy': accuracy_nn,
+            'precision': precision_nn,
+            'recall': recall_nn,
+            'f1': f1_nn
+        }
+        
+        # Gráfico de comparação de métricas
+        st.write("#### Comparação de Métricas")
+        fig = plot_metrics_comparison(metrics_rf, metrics_nn)
+        st.pyplot(fig)
+        
+        # Exibição detalhada por modelo
         col1, col2 = st.columns(2)
         
         with col1:
@@ -333,6 +396,7 @@ def main():
             st.metric("Acurácia", f"{accuracy_rf:.2%}")
             st.metric("Precisão", f"{precision_rf:.2%}")
             st.metric("Recall", f"{recall_rf:.2%}")
+            st.metric("F1-Score", f"{f1_rf:.2%}")
             
             st.write("**Matriz de Confusão**")
             plot_confusion_matrix_with_labels(cm_rf, "Matriz de Confusão - Random Forest", 'Blues')
@@ -344,6 +408,7 @@ def main():
             st.metric("Acurácia", f"{accuracy_nn:.2%}")
             st.metric("Precisão", f"{precision_nn:.2%}")
             st.metric("Recall", f"{recall_nn:.2%}")
+            st.metric("F1-Score", f"{f1_nn:.2%}")
             
             st.write("**Matriz de Confusão**")
             plot_confusion_matrix_with_labels(cm_nn, "Matriz de Confusão - Rede Neural", 'Greens')
@@ -362,12 +427,14 @@ def main():
                     - Acurácia: {accuracy_rf:.2%}
                     - Precisão: {precision_rf:.2%}
                     - Recall: {recall_rf:.2%}
+                    - F1-Score: {f1_rf:.2%}
                     - Matriz de Confusão: \n{cm_rf}
                     
                     **Rede Neural:**
                     - Acurácia: {accuracy_nn:.2%}
                     - Precisão: {precision_nn:.2%}
                     - Recall: {recall_nn:.2%}
+                    - F1-Score: {f1_nn:.2%}
                     - Matriz de Confusão: \n{cm_nn}
                     
                     **Relatório de Classificação (RF):**
@@ -394,14 +461,15 @@ def main():
         **Recall** (Sensibilidade):  
         > Das fraudes reais existentes, quantas foram detectadas. Fórmula: TP / (TP + FN)
 
+        **F1-Score**:  
+        > Média harmônica entre Precisão e Recall. Útil quando há desbalanceamento de classes.
+        > Fórmula: 2 * (Precision * Recall) / (Precision + Recall)
+
         **Matriz de Confusão**:
         - **TP** (True Positive): Fraudes detectadas corretamente
         - **FP** (False Positive): Consumos normais classificados como fraude
         - **TN** (True Negative): Consumos normais corretamente identificados
         - **FN** (False Negative): Fraudes não detectadas
-
-        **F1-Score**: Média harmônica entre Precisão e Recall
-        > Fórmula: 2 * (Precision * Recall) / (Precision + Recall)
         """
         with st.expander("Como interpretar essas métricas?"):
             st.markdown(interpretation)
@@ -423,11 +491,13 @@ def main():
                     - Acurácia: {accuracy_rf:.2%}
                     - Precisão: {precision_rf:.2%}
                     - Recall: {recall_rf:.2%}
+                    - F1-Score: {f1_rf:.2%}
                     
                     **Métricas da Rede Neural:**
                     - Acurácia: {accuracy_nn:.2%}
                     - Precisão: {precision_nn:.2%}
                     - Recall: {recall_nn:.2%}
+                    - F1-Score: {f1_nn:.2%}
                     """
                     
                     gemini_content = st.session_state.get('gemini_analysis', "Nenhuma análise Gemini foi gerada ainda.")
@@ -439,7 +509,8 @@ def main():
                         interpretation=interpretation,
                         df=df,
                         cm_rf=cm_rf,
-                        cm_nn=cm_nn
+                        cm_nn=cm_nn,
+                        metrics_comparison=fig
                     )
                     
                     st.markdown(create_download_link(pdf, "relatorio_analise_energia.pdf"), unsafe_allow_html=True)
