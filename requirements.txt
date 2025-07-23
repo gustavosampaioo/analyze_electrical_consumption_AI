@@ -1,7 +1,8 @@
 google-generativeai
 streamlit
-pandas
-scikit-learn
-matplotlib
-seaborn
-tensorflow
+tensorflow>=2.12.0
+pandas>=1.5.0
+scikit-learn>=1.2.0
+matplotlib>=3.6.0
+seaborn>=0.12.0
+streamlit>=1.22.0
