@@ -1,28 +1,20 @@
 import streamlit as st
 import pandas as pd
-import os
+import numpy as np
+from pathlib import Path
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.neural_network import MLPClassifier
+from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import (accuracy_score, precision_score, 
-                            recall_score, confusion_matrix, 
-                            classification_report)
+                           recall_score, confusion_matrix, 
+                           classification_report)
 import matplotlib.pyplot as plt
 import seaborn as sns
-import google.generativeai as generai
-from pathlib import Path
-import numpy as np
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Dropout, Flatten
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.utils import to_categorical
-from sklearn.preprocessing import StandardScaler
 
 # Configuração inicial
 st.set_page_config(page_title="Análise de Consumo de Energia", layout="wide")
 st.title("🔍 Análise de Consumo de Energia com Detecção de Fraude")
-
-# Configuração da API do Google Generative AI
-generai.configure(api_key="AIzaSyBHouRPqa8LLjU96nEPk6UJBgswH66OJjY")  # Substitua pela sua chave API
 
 # Função para encontrar arquivo no Desktop
 def find_csv_file():
@@ -62,49 +54,19 @@ def load_data(uploaded_file=None):
     st.warning("Nenhum arquivo encontrado. Por favor, faça upload do arquivo.")
     return None
 
-# Função para criar modelo neural
-def create_nn_model(input_shape):
-    model = Sequential([
-        Dense(128, activation='relu', input_shape=(input_shape,)),
-        Dropout(0.3),
-        Dense(64, activation='relu'),
-        Dropout(0.2),
-        Dense(1, activation='sigmoid')
-    ])
-    
-    model.compile(optimizer=Adam(learning_rate=0.001),
-                  loss='binary_crossentropy',
-                  metrics=['accuracy', 
-                           tf.keras.metrics.Precision(),
-                           tf.keras.metrics.Recall()])
+# Função para criar modelo neural (usando scikit-learn)
+def create_nn_model():
+    model = MLPClassifier(
+        hidden_layer_sizes=(128, 64),
+        activation='relu',
+        solver='adam',
+        learning_rate_init=0.001,
+        max_iter=200,
+        random_state=42,
+        early_stopping=True,
+        validation_fraction=0.2
+    )
     return model
-
-# Função para análise com IA generativa
-def analyze_with_ai(data_summary, metrics):
-    model = generai.GenerativeModel("gemini-1.5-flash-latest")
-    
-    prompt = f"""
-    Você é um especialista em análise de dados de consumo de energia e detecção de fraudes. 
-    Analise os seguintes dados e métricas:
-
-    **Resumo dos dados:**
-    {data_summary}
-
-    **Métricas do modelo:**
-    {metrics}
-
-    Sua análise deve conter:
-    1. Padrões de consumo de energia identificados
-    2. Interpretação profissional das métricas de avaliação
-    3. Análise da matriz de confusão
-    4. Recomendações para melhorar a detecção
-    5. Períodos de maior risco de fraude
-    
-    Formate a resposta em markdown com títulos e bullet points.
-    """
-    
-    response = model.generate_content(prompt)
-    return response.text
 
 # Função principal
 def main():
@@ -167,18 +129,11 @@ def main():
         rf_model.fit(X_train, y_train)
         y_pred_rf = rf_model.predict(X_test)
         
-        # Modelo Neural Network
-        st.write("#### Rede Neural")
-        nn_model = create_nn_model(X_train.shape[1])
-        history = nn_model.fit(
-            X_train, y_train,
-            validation_data=(X_val, y_val),
-            epochs=20,
-            batch_size=32,
-            verbose=0
-        )
-        
-        y_pred_nn = (nn_model.predict(X_test) > 0.5).astype(int)
+        # Modelo Neural Network (MLP)
+        st.write("#### Rede Neural (MLP)")
+        nn_model = create_nn_model()
+        nn_model.fit(X_train, y_train)
+        y_pred_nn = nn_model.predict(X_test)
         
         # Avaliação dos modelos
         st.subheader("📈 Métricas de Avaliação")
@@ -214,7 +169,7 @@ def main():
             st.pyplot(fig)
         
         with col2:
-            st.write("**Rede Neural**")
+            st.write("**Rede Neural (MLP)**")
             st.metric("Acurácia", f"{accuracy_nn:.2%}")
             st.metric("Precisão", f"{precision_nn:.2%}")
             st.metric("Recall", f"{recall_nn:.2%}")
@@ -228,46 +183,25 @@ def main():
             plt.xlabel('Predito')
             st.pyplot(fig)
         
-        # Curvas de aprendizado
-        st.subheader("📚 Curvas de Aprendizado (Rede Neural)")
-        fig, ax = plt.subplots(1, 2, figsize=(15, 5))
-        
-        ax[0].plot(history.history['accuracy'], label='Treino')
-        ax[0].plot(history.history['val_accuracy'], label='Validação')
-        ax[0].set_title('Acurácia')
-        ax[0].legend()
-        
-        ax[1].plot(history.history['loss'], label='Treino')
-        ax[1].plot(history.history['val_loss'], label='Validação')
-        ax[1].set_title('Loss')
-        ax[1].legend()
-        
-        st.pyplot(fig)
-        
-        # Análise com IA generativa
-        if st.button("🧠 Obter Análise Avançada com Gemini"):
-            with st.spinner("Analisando dados com Gemini 1.5 Flash..."):
-                try:
-                    data_summary = df.describe().to_string()
-                    
-                    metrics = f"""
-                    **Random Forest:**
-                    - Acurácia: {accuracy_rf:.2%}
-                    - Precisão: {precision_rf:.2%}
-                    - Recall: {recall_rf:.2%}
-                    
-                    **Rede Neural:**
-                    - Acurácia: {accuracy_nn:.2%}
-                    - Precisão: {precision_nn:.2%}
-                    - Recall: {recall_nn:.2%}
-                    """
-                    
-                    analysis = analyze_with_ai(data_summary, metrics)
-                    
-                    st.subheader("📝 Análise com Gemini 1.5 Flash")
-                    st.markdown(analysis)
-                except Exception as e:
-                    st.error(f"Erro na análise com Gemini: {str(e)}")
+        # Seção de interpretação
+        st.subheader("🔍 Guia de Interpretação")
+        with st.expander("Como interpretar essas métricas?"):
+            st.markdown("""
+            **Acurácia** (Accuracy):  
+            > Porcentagem total de previsões corretas. Útil para conjuntos balanceados.
+
+            **Precisão** (Precision):  
+            > Dos alertas de fraude emitidos, quantos eram realmente fraudes.
+
+            **Recall** (Sensibilidade):  
+            > Das fraudes reais existentes, quantas foram detectadas.
+
+            **Matriz de Confusão**:
+            - **TP** (True Positive): Fraudes detectadas corretamente
+            - **FP** (False Positive): Consumos normais classificados como fraude
+            - **TN** (True Negative): Consumos normais corretamente identificados
+            - **FN** (False Negative): Fraudes não detectadas
+            """)
 
 if __name__ == "__main__":
     main()
