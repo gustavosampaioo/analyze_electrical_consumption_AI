@@ -11,11 +11,14 @@ from sklearn.metrics import (accuracy_score, precision_score,
                            classification_report)
 import matplotlib.pyplot as plt
 import seaborn as sns
-
+import google.generativeai as generai
 
 # Configuração inicial
 st.set_page_config(page_title="Análise de Consumo de Energia", layout="wide")
 st.title("🔍 Análise de Consumo de Energia com Detecção de Fraude")
+
+# Configuração da API do Google Generative AI
+generai.configure(api_key="AIzaSyBHouRPqa8LLjU96nEPk6UJBgswH66OJjY")  # Substitua pela sua chave API
 
 # Função para encontrar arquivo no Desktop
 def find_csv_file():
@@ -68,6 +71,33 @@ def create_nn_model():
         validation_fraction=0.2
     )
     return model
+
+# Função para análise com IA generativa
+def analyze_with_ai(data_summary, metrics):
+    model = generai.GenerativeModel("gemini-1.5-flash-latest")
+    
+    prompt = f"""
+    Você é um especialista em análise de dados de consumo de energia e detecção de fraudes. 
+    Analise os seguintes dados e métricas:
+
+    **Resumo dos dados:**
+    {data_summary}
+
+    **Métricas do modelo:**
+    {metrics}
+
+    Sua análise deve conter:
+    1. Padrões de consumo de energia identificados
+    2. Interpretação profissional das métricas de avaliação
+    3. Análise da matriz de confusão
+    4. Recomendações para melhorar a detecção
+    5. Períodos de maior risco de fraude
+    
+    Formate a resposta em markdown com títulos e bullet points.
+    """
+    
+    response = model.generate_content(prompt)
+    return response.text
 
 # Função principal
 def main():
@@ -183,6 +213,39 @@ def main():
             plt.ylabel('Verdadeiro')
             plt.xlabel('Predito')
             st.pyplot(fig)
+        
+        # Análise com IA generativa
+        if st.button("🧠 Obter Análise Avançada com Gemini"):
+            with st.spinner("Analisando dados com Gemini 1.5 Flash..."):
+                try:
+                    # Preparar resumo dos dados
+                    data_summary = df.describe().to_string()
+                    
+                    # Preparar métricas combinadas
+                    metrics = f"""
+                    **Random Forest:**
+                    - Acurácia: {accuracy_rf:.2%}
+                    - Precisão: {precision_rf:.2%}
+                    - Recall: {recall_rf:.2%}
+                    - Matriz de Confusão: \n{cm_rf}
+                    
+                    **Rede Neural:**
+                    - Acurácia: {accuracy_nn:.2%}
+                    - Precisão: {precision_nn:.2%}
+                    - Recall: {recall_nn:.2%}
+                    - Matriz de Confusão: \n{cm_nn}
+                    
+                    **Relatório de Classificação (RF):**
+                    \n{classification_report(y_test, y_pred_rf)}
+                    """
+                    
+                    # Chamar a API do Google
+                    analysis = analyze_with_ai(data_summary, metrics)
+                    
+                    st.subheader("📝 Análise com Gemini 1.5 Flash")
+                    st.markdown(analysis)
+                except Exception as e:
+                    st.error(f"Erro na análise com Gemini: {str(e)}")
         
         # Seção de interpretação
         st.subheader("🔍 Guia de Interpretação")
