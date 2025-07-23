@@ -12,6 +12,7 @@ from sklearn.metrics import (accuracy_score, precision_score,
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+
 # Configuração inicial
 st.set_page_config(page_title="Análise de Consumo de Energia", layout="wide")
 st.title("🔍 Análise de Consumo de Energia com Detecção de Fraude")
